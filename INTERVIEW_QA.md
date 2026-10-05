@@ -13,12 +13,13 @@ I would demonstrate the linked implementation or examples and distinguish that e
 ## 2. How is this repository organized?
 
 - [`src/cnml/main.py`](src/cnml/main.py): Implementation or supporting configuration.
+- [`src/cnml/ops.py`](src/cnml/ops.py): Implementation or supporting configuration.
 - [`src/cnml/gate.py`](src/cnml/gate.py): Implementation or supporting configuration.
 - [`requirements.txt`](requirements.txt): Implementation or supporting configuration.
 - [`src/cnml/__init__.py`](src/cnml/__init__.py): Implementation or supporting configuration.
-- [`tests/test_gate.py`](tests/test_gate.py): Executable checks and regression examples.
-- [`.github/workflows/ci.yml`](.github/workflows/ci.yml): GitHub Actions job definitions.
-- [`README.md`](README.md): Project explanations or operating notes.
+- [`Dockerfile`](Dockerfile): Container build/service configuration.
+- [`Makefile`](Makefile): Implementation or supporting configuration.
+- [`docker-compose.yml`](docker-compose.yml): Container build/service configuration.
 
 [PROJECT_ARCHITECTURE.md](PROJECT_ARCHITECTURE.md) contains the component diagram and the implementation walkthrough.
 
@@ -44,7 +45,11 @@ The implementation calls `InputError`, `body.get`, `failed.append`, `isinstance`
 Explicit failure paths include:
 
 - `InputError('body must be an object')` in [`src/cnml/gate.py`](src/cnml/gate.py#L7).
-- `HTTPException(status_code=422, detail=str(exc))` in [`src/cnml/main.py`](src/cnml/main.py#L17).
+- `HTTPException(status_code=422, detail=str(exc))` in [`src/cnml/main.py`](src/cnml/main.py#L19).
+- `HTTPException(status_code=404, detail='workspace not found')` in [`src/cnml/ops.py`](src/cnml/ops.py#L77).
+- `HTTPException(status_code=404, detail='job not found')` in [`src/cnml/ops.py`](src/cnml/ops.py#L100).
+- `HTTPException(status_code=404, detail='job not found')` in [`src/cnml/ops.py`](src/cnml/ops.py#L109).
+- `HTTPException(status_code=403, detail='production apply is disabled in this lab')` in [`src/cnml/ops.py`](src/cnml/ops.py#L113).
 
 I would test both the condition that reaches each exception and the caller that translates it. An explicit raise does not mean every malformed input or dependency failure is handled.
 
@@ -66,14 +71,22 @@ This is a concrete regression example from the repository. Its assertions establ
 
 ## 6. What HTTP interface does the code expose?
 
-- `GET /healthz` → `healthz` in [`src/cnml/main.py`](src/cnml/main.py#L8).
-- `POST /check` → `post_check` in [`src/cnml/main.py`](src/cnml/main.py#L13).
+- `GET /healthz` → `healthz` in [`src/cnml/main.py`](src/cnml/main.py#L10).
+- `POST /check` → `post_check` in [`src/cnml/main.py`](src/cnml/main.py#L15).
+- `GET /readyz` → `readyz` in [`src/cnml/ops.py`](src/cnml/ops.py#L44).
+- `POST /workspaces` → `create_workspace` in [`src/cnml/ops.py`](src/cnml/ops.py#L49).
+- `GET /workspaces` → `list_workspaces` in [`src/cnml/ops.py`](src/cnml/ops.py#L66).
+- `POST /workspaces/{workspace_id}/jobs` → `create_job` in [`src/cnml/ops.py`](src/cnml/ops.py#L73).
+- `GET /jobs/{job_id}` → `get_job` in [`src/cnml/ops.py`](src/cnml/ops.py#L96).
+- `POST /jobs/{job_id}/approve` → `approve_job` in [`src/cnml/ops.py`](src/cnml/ops.py#L105).
 
 These are literal decorators. Application/router prefixes, authentication, and middleware must be checked in the corresponding setup code.
 
-## 7. How would you investigate data ownership and persistence?
+## 7. Where does state live, and what happens with multiple workers?
 
-Trace the data/configuration files and the code that reads or writes them in the component table. Identify which files are examples, which records are mutable, and which external store is actually configured. I would document those facts before discussing retention, backup, or tenant isolation.
+Module-level containers include `_WORKSPACES`, `_JOBS`, `_AUDIT`, `_METRICS` in [`src/cnml/ops.py`](src/cnml/ops.py).
+
+These containers belong to a Python process. Inspect which are constant fixtures and which are mutated. Mutable process state needs an explicit shared-storage or synchronization strategy before multiple workers can provide consistent behavior.
 
 ## 8. How would another engineer reproduce your walkthrough?
 
@@ -115,3 +128,9 @@ The implementation in [`src/cnml/gate.py`](src/cnml/gate.py#L5) branches on:
 - `not body.get('scale_to_zero')`
 
 A useful extension is a table-driven test that covers each condition just below, at, and above its boundary where applicable. These expressions are the current rules; changing them changes behavior and should be justified by the project’s acceptance criteria.
+
+## 13. What does the operations plane add, and where is its limit?
+
+[`src/cnml/ops.py`](src/cnml/ops.py) declares `GET /readyz`, `POST /workspaces`, `GET /workspaces`, `POST /workspaces/{workspace_id}/jobs`, `GET /jobs/{job_id}`, `POST /jobs/{job_id}/approve`, `GET /audit`, `GET /metrics`. Inspect the application’s `include_router` call for its URL prefix.
+
+Its state containers are `_WORKSPACES`, `_JOBS`, `_AUDIT`, `_METRICS`. The job-approval handler defines whether a target is accepted or refused; check that branch and the associated tests instead of treating a recorded job as a successful infrastructure apply.

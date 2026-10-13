@@ -1,5 +1,12 @@
 # Cloud-Native ML Training Platform
 
+## Overview
+
+A cost guardrail for ML training clusters. The `POST /check` endpoint passes a training pool config only when it uses spot capacity and can scale to zero, so training nodes are cheap while running and do not sit idle. It reports the result and never applies the config. A versioned `/v1` ops API adds workspaces, tenant isolation, job approval and audit records.
+
+- **Built with:** Python, pytest, Docker, GitHub Actions
+- **Scope:** Local lab with tests; it does not call a hosted model and refuses production apply.
+
 <!-- project-guide:start -->
 ## Project guide
 
